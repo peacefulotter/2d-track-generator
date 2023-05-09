@@ -7,10 +7,8 @@ from constants import TILE_SIZE, TILE_MAX_WIDTH, TILE_MAX_HEIGHT
 noise = PerlinNoise(octaves=3, seed=1)
 
 def load_decor_img(path, mult, rendering_order):
-    size = mult * TILE_SIZE * (random.random() + 0.5)
     img = pygame.image.load(f'./decor/{path}.png')
-    img = pygame.transform.scale(img, (size, size))
-    return img, rendering_order
+    return img, rendering_order, mult
 
 decor_details = [
     ('Bush_01', 1, 1), ('Bush_02', 2, 1),
@@ -36,10 +34,12 @@ background_images = [
 
 
 class Decor:
-    def __init__(self, pos):
+    def __init__(self, pos, img, rendering_order, mult):
         self.pos = pos
-        self.img, self.rendering_order = random.choice(decor_images)
-        self.img = pygame.transform.rotate(self.img, random.random() * 360)
+        self.rendering_order = rendering_order 
+        size = TILE_SIZE * mult
+        self.img = pygame.transform.rotate(img, random.random() * 360)
+        self.img = pygame.transform.scale(self.img, (size, size))
     
     def __lt__(self, other):
         return self.rendering_order < other.rendering_order
@@ -48,12 +48,18 @@ class Background:
     def __init__(self, pos, img):
         self.pos = pos
         self.img = img
-    
 
-def generate_background(visited, decor_amount=50) -> list[Decor]:
-    def get_random_coords():
-        return (random.randint(0, TILE_MAX_WIDTH), random.randint(0, TILE_MAX_HEIGHT))
-    
+def get_random_coords(occupied, mult):
+    coords = (random.randint(0, TILE_MAX_WIDTH), random.randint(0, TILE_MAX_HEIGHT))
+    # check if decor can be placed at these coords
+    m = int(mult)
+    for i in range(m):
+        for j in range(m):
+            if (coords[0] + i, coords[1] + j) in occupied:
+                return None 
+    return coords
+
+def generate_background(occupied, decor_amount=50) -> list[Decor]:
     background = []
     for i in range(TILE_MAX_WIDTH):
         for j in range(TILE_MAX_HEIGHT):
@@ -68,11 +74,17 @@ def generate_background(visited, decor_amount=50) -> list[Decor]:
             background.append(Background((i, j), img))
 
     decor = []
-    for _ in range(decor_amount):
-        coords = get_random_coords()
-        while coords in visited:
-            coords = get_random_coords()
-        decor.append(Decor(coords))
+    while len(decor) < decor_amount:
+        img, rendering_order, mult = random.choice(decor_images)
+        mult = mult * (random.random() + 2) / 2.
+        # Find coordinates to place the decor
+        coords = None
+        while coords == None or coords in occupied:
+            coords = get_random_coords(occupied, mult)
+
+        d = Decor(coords, img, rendering_order, mult)
+        decor.append(d)
+
     decor.sort()
     
     return background, decor

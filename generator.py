@@ -5,7 +5,7 @@ from collections import namedtuple
 
 from background import generate_background
 from tiles import Direction, tiles
-from constants import TILE_SIZE
+from constants import TILE_SIZE, TILE_MAX_WIDTH, TILE_MAX_HEIGHT
 from window import render
 
 Track = namedtuple("Track", "tile pos")
@@ -57,14 +57,14 @@ def tile_hitbox(pos, next_pos, dir):
             hitbox.append((i, j))
     return hitbox
 
-def can_place_tile(visited, hitbox):
+def can_place_tile(occupied, hitbox):
     for coords in hitbox:
-        if coords in visited:
+        if coords in occupied:
             return False
     return True
 
 
-def get_candidates(visited, pos, dir) -> list[Candidate]:
+def get_candidates(occupied, pos, dir) -> list[Candidate]:
     candidates = []
     for tile in tiles:
         match_with_dir = other_side(tile.a_side) == dir or other_side(tile.b_side) == dir
@@ -74,7 +74,7 @@ def get_candidates(visited, pos, dir) -> list[Candidate]:
         place_pos, next_pos = new_pos_big(tile, pos, dir) if tile.is_big else new_pos_small(pos, dir)
         hitbox = tile_hitbox(pos, next_pos, dir)
         
-        if can_place_tile(visited, hitbox):
+        if can_place_tile(occupied, hitbox):
             candidate = Candidate(tile, next_pos, place_pos, hitbox) 
             candidates.append(candidate)
 
@@ -98,41 +98,66 @@ def try_generate(length):
     track_rect = ((0, 0), (0, 0)) # top left - bottom right
     dir = Direction.TOP
     pos = (0, 0)
-    visited = [pos]
+    occupied = [pos]
     for i in range(length):
         if i == 0:
             tile = tiles[0]
             track.append(Track(tile, pos))
             dir = tile.a_side
         else:
-            candidates = get_candidates(visited, pos, dir)
+            candidates = get_candidates(occupied, pos, dir)
             if len(candidates) == 0:
                 return None, None, None, False
             
             (tile, next_pos, place_pos, hitbox) = random.choice(candidates)
             
-            visited.extend(hitbox)
+            occupied.extend(hitbox)
             track.append(Track(tile, place_pos))
 
             track_rect = update_rect(track_rect, hitbox)
             dir = tile.b_side if other_side(tile.a_side) == dir else tile.a_side
             pos = next_pos
 
-    return track, visited, track_rect, True
+    return track, occupied, track_rect, True
+
+def center_track(track, occupied, track_rect):
+    (min_x, min_y), (max_x, max_y) = track_rect
+    width = max_x - min_x
+    height = max_y - min_y
+    dx = int((TILE_MAX_WIDTH - width) / 2. - min_x)
+    dy = int((TILE_MAX_HEIGHT - height) / 2. - min_y)
+    center_track_rect = ((min_x + dx, min_y + dy), (max_x + dx, max_y + dy))
+    print(track_rect, center_track_rect, TILE_MAX_WIDTH, TILE_MAX_HEIGHT)
+    for i in range(len(track)):
+        t = track[i]
+        x, y = t.pos
+        track[i] = Track(t.tile, (x + dx, y + dy))
+    for i in range(len(occupied)):
+        x, y = occupied[i]
+        occupied[i] = (x + dx, y + dy)
+    return track, occupied, center_track_rect
 
 def generate(length, seed=42, decor_amount=25):
     random.seed(seed)
-    track, visited, track_rect, done = try_generate(length)
+    
+    # track
+    done = False
     while not done:
-        track, visited, track_rect, done = try_generate(length)
-    background, decor = generate_background(visited, decor_amount)
-    return track, visited, track_rect, background, decor
+        track, occupied, track_rect, done = try_generate(length)
+    
+    # center
+    track, occupied, track_rect = center_track(track, occupied, track_rect)
+
+    # decor
+    background, decor = generate_background(occupied, decor_amount)
+    
+    return track, occupied, track_rect, background, decor
 
 if __name__ == '__main__':
     length = 40
     seed = 42
-    track, visited, track_rect, background, decor = generate(length, seed)
-    debug = False
+    track, occupied, track_rect, background, decor = generate(length, seed)
+    debug = True
 
     import pygame
     from pygame.locals import *
@@ -141,39 +166,37 @@ if __name__ == '__main__':
     blue = (0, 0, 128)
     font = pygame.font.Font('freesansbold.ttf', 32)
 
-    offset = 0
-
     def cb(screen):
-        global track, visited, track_rect, background, decor, seed, length
+        global track, occupied, track_rect, background, decor, seed, length
         left, middle, right = pygame.mouse.get_pressed()
         if right:
             length += 1
-            track, visited, track_rect, background, decor = generate(length, seed)
+            track, occupied, track_rect, background, decor = generate(length, seed)
         if middle:
             length -= 1
-            track, visited, track_rect, background, decor = generate(length, seed)
+            track, occupied, track_rect, background, decor = generate(length, seed)
         if left:
             seed += 1
-            track, visited, track_rect, background, decor = generate(length, seed)
+            track, occupied, track_rect, background, decor = generate(length, seed)
 
         for bg in background:
             x, y = bg.pos
-            x = x * TILE_SIZE + offset 
-            y = y * TILE_SIZE + offset
+            x = x * TILE_SIZE 
+            y = y * TILE_SIZE
             screen.blit(bg.img, (x, y))
             
         for d in decor:
             x, y = d.pos
-            x = x * TILE_SIZE + offset 
-            y = y * TILE_SIZE + offset
+            x = x * TILE_SIZE 
+            y = y * TILE_SIZE
             screen.blit(d.img, (x, y))
 
 
 
         for i, t in enumerate(track):
             x, y = t.pos
-            x = x * TILE_SIZE + offset 
-            y = y * TILE_SIZE + offset
+            x = x * TILE_SIZE 
+            y = y * TILE_SIZE
             img = t.tile.img
             screen.blit(img, (x, y))
             if debug:
@@ -181,15 +204,15 @@ if __name__ == '__main__':
                 screen.blit(text, (x, y))
         
         if debug:
-            for (x, y) in visited:
-                x = x * TILE_SIZE + offset + TILE_SIZE / 2
-                y = y * TILE_SIZE + offset + TILE_SIZE / 2
+            for (x, y) in occupied:
+                x = x * TILE_SIZE + TILE_SIZE / 2
+                y = y * TILE_SIZE + TILE_SIZE / 2
                 pygame.draw.circle(screen, 'red', (x, y), 10)
 
             (left, top), (right, bottom) = track_rect
             width  = (right - left + 1) * TILE_SIZE
             height = (bottom - top + 1) * TILE_SIZE
-            rect = pygame.Rect(left * TILE_SIZE + offset, top * TILE_SIZE + offset, width, height)
+            rect = pygame.Rect(left * TILE_SIZE, top * TILE_SIZE, width, height)
             pygame.draw.rect(screen, 'red', rect, width=3)
 
     render(cb)
