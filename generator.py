@@ -125,13 +125,13 @@ def generate(length, seed=42, decor_amount=25):
     track, visited, track_rect, done = try_generate(length)
     while not done:
         track, visited, track_rect, done = try_generate(length)
-    background = generate_background(visited, decor_amount)
-    return track, visited, track_rect, background
+    background, decor = generate_background(visited, decor_amount)
+    return track, visited, track_rect, background, decor
 
 if __name__ == '__main__':
     length = 40
     seed = 42
-    track, visited, track_rect, bg = generate(length, seed)
+    track, visited, track_rect, background, decor = generate(length, seed)
     debug = False
 
     import pygame
@@ -144,24 +144,31 @@ if __name__ == '__main__':
     offset = 0
 
     def cb(screen):
-        global track, visited, track_rect, bg, seed, length
+        global track, visited, track_rect, background, decor, seed, length
         left, middle, right = pygame.mouse.get_pressed()
         if right:
             length += 1
-            track, visited, track_rect, bg = generate(length, seed)
+            track, visited, track_rect, background, decor = generate(length, seed)
         if middle:
             length -= 1
-            track, visited, track_rect, bg = generate(length, seed)
+            track, visited, track_rect, background, decor = generate(length, seed)
         if left:
             seed += 1
-            track, visited, track_rect, bg = generate(length, seed)
+            track, visited, track_rect, background, decor = generate(length, seed)
 
-        for decor in bg:
-            x, y = decor.pos
+        for bg in background:
+            x, y = bg.pos
             x = x * TILE_SIZE + offset 
             y = y * TILE_SIZE + offset
-            img = decor.img
-            screen.blit(img, (x, y))
+            screen.blit(bg.img, (x, y))
+            
+        for d in decor:
+            x, y = d.pos
+            x = x * TILE_SIZE + offset 
+            y = y * TILE_SIZE + offset
+            screen.blit(d.img, (x, y))
+
+
 
         for i, t in enumerate(track):
             x, y = t.pos
